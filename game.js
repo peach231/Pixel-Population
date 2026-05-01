@@ -1971,7 +1971,7 @@ function restartGame() {
    HELPERS
 ───────────────────────────────────────────────────────────── */
 function fmtSpecies(key) {
-  return key.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase());
+  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function preloadSprites() {
