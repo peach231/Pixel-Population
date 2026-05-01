@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel Preserve</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ── Habitat Selection Screen (shown first) ─────────────── -->
+<div id="habitat-select-screen">
+  <div id="habitat-select-box">
+    <div id="select-title">Pixel Preserve</div>
+    <p id="select-subtitle">Choose the ecosystem you will steward. This choice is permanent — restart to begin anew.</p>
+    <div id="habitat-select-grid"></div>
+    <div id="habitat-start-panel">
+      <span id="selected-habitat-label">Selected Habitat: None</span>
+      <button id="start-game-btn" disabled>Start Game</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main Game (hidden until habitat chosen) ───────────── -->
+<div id="app">
+
+  <!-- Top stat bar -->
+  <div id="topbar">
+    <div class="stat-block">
+      <span class="stat-label">Year</span>
+      <span class="stat-value blue" id="ui-year">0.0</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Biomass</span>
+      <span class="stat-value gold" id="ui-biomass">0</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Biodiversity</span>
+      <span class="stat-value green" id="ui-biodiversity">0</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Stability</span>
+      <span class="stat-value" id="ui-stability">100%</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Animals</span>
+      <span class="stat-value" id="ui-animals">0</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Next Disaster</span>
+      <span class="stat-value warn" id="ui-disaster">—</span>
+    </div>
+    <div id="title-badge">Pixel Preserve</div>
+    <button id="restart-btn" title="Restart game">↺ Restart</button>
+  </div>
+
+  <!-- Main content -->
+  <div id="main">
+
+    <!-- Left: habitat canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Right: dashboard -->
+    <div id="dashboard">
+
+      <div id="tab-bar">
+        <button class="active" data-tab="map">Map</button>
+        <button data-tab="skills">Skills</button>
+        <button data-tab="divine">Divine Hand</button>
+        <button data-tab="log">Log</button>
+      </div>
+
+      <!-- MAP tab -->
+      <div id="tab-map" class="tab-content visible">
+        <div class="section-header">Current Habitat</div>
+        <div id="habitat-info-panel"></div>
+        <div class="section-header" style="margin-top:16px;">Live Statistics</div>
+        <div id="habitat-stats-panel" class="habitat-stats">Loading…</div>
+      </div>
+
+      <!-- SKILLS tab -->
+      <div id="tab-skills" class="tab-content">
+        <div class="section-header">Skill Tree</div>
+        <div id="skill-tree-container"></div>
+        <div class="section-header" style="margin-top:12px;">Ability</div>
+        <div id="ability-container"></div>
+      </div>
+
+      <!-- DIVINE HAND tab -->
+      <div id="tab-divine" class="tab-content">
+        <div class="section-header">Divine Interventions</div>
+        <p class="divine-intro">Shape your ecosystem through divine power. Each intervention costs Biomass and endures permanently.</p>
+        <div id="divine-list"></div>
+        <div id="placing-indicator" style="display:none">
+          <span id="placing-label">Click canvas to place</span>
+          <button id="placing-cancel">Cancel</button>
+        </div>
+      </div>
+
+      <!-- LOG tab -->
+      <div id="tab-log" class="tab-content">
+        <div class="section-header">Event Log</div>
+        <div id="log-container"></div>
+      </div>
+
+    </div><!-- /dashboard -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Disaster flash overlay -->
+<div id="disaster-overlay"></div>
+
+<!-- Offline progress modal -->
+<div id="offline-modal">
+  <div class="modal-box">
+    <h2>Welcome Back</h2>
+    <p id="offline-msg">Your ecosystem continued in your absence.</p>
+    <div class="biomass-gained" id="offline-biomass">+0 Biomass</div>
+    <br/>
+    <button class="modal-btn" id="offline-ok">Continue</button>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
