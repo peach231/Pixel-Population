@@ -1,4 +1,7 @@
-/* =============================================================
+
+# Write the modified game.js file
+with open('/mnt/agents/output/game.js', 'w', encoding='utf-8') as f:
+    f.write("""/* =============================================================
    Pixel Preserve — game.js
    Idle ecosystem simulation. 100% client-side.
    Sprites drawn via canvas fillRect; swap URLs in SPRITE_IMAGE_URLS.
@@ -2125,3 +2128,6 @@ function startGame() {
 
 // Boot
 startGame();
+""")
+
+print("game.js written successfully")
