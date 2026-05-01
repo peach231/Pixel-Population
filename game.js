@@ -14,9 +14,9 @@
    Example: clownfish: 'https://your-cdn.com/sprites/clownfish.png'
 ───────────────────────────────────────────────────────────── */
 const SPRITE_IMAGE_URLS = {
-  polar_bear: '', arctic_fox: '', bison: '', zebra: '',
-  lizard: '', desert_fox: '', clownfish: '', sea_turtle: '',
-  rat: '', pigeon: '', jaguar: '', toucan: '',
+  polar_bear: 'https://www.image2url.com/r2/default/images/1777658473754-26d88ff0-88dc-4d9f-bd33-34ee706da7fd.png', arctic_fox: 'https://www.image2url.com/r2/default/images/1777658576981-4e1da93d-a194-4571-bbed-5ebd849d8476.png', bison: 'https://www.image2url.com/r2/default/images/1777658648724-d5f4b3e4-2241-4c9c-9459-95d338c750b4.png', zebra: 'https://www.image2url.com/r2/default/images/1777658809482-1eda1a0e-93db-4efd-89c3-e8869897b5f7.png',
+  lizard: 'https://www.image2url.com/r2/default/images/1777658879530-13887cc4-8870-4f05-93ff-f349cb97d2de.png', desert_fox: 'https://www.image2url.com/r2/default/images/1777659056836-ffd45eed-5164-4f81-8e3a-236cd7e5386a.png', clownfish: 'https://www.image2url.com/r2/default/images/1777659181630-d3973fff-109f-4947-a540-090d04bd04cc.png', sea_turtle: 'https://www.image2url.com/r2/default/images/1777659249652-03d4ba84-dbcd-473a-a92d-062dc0ea02d3.png',
+  rat: 'https://www.image2url.com/r2/default/images/1777659293069-267d0d91-772e-461f-a319-f5018b9516f2.png', pigeon: '', jaguar: '', toucan: '',
   plant_tundra: '', plant_grassland: '', plant_desert: '',
   plant_coral: '', plant_urban: '', plant_jungle: '',
 };
