@@ -1,4 +1,3 @@
-
 /* =============================================================
    Pixel Preserve — game.js
    Idle ecosystem simulation. 100% client-side.
@@ -23,30 +22,42 @@ const SPRITE_IMAGE_URLS = {
 const SPRITE_IMAGES = {};
 
 /* ─────────────────────────────────────────────────────────────
-   CONSTANTS
+   CONSTANTS  (PACING & MOVEMENT BUFFED)
 ───────────────────────────────────────────────────────────── */
 const CANVAS_W          = 800;
 const CANVAS_H          = 560;
 const SPRITE_SCALE      = 2;
-const MAX_SPEED         = 55;
-const WANDER_STRENGTH   = 90;
-const SEEK_STRENGTH     = 180;    // seek-plant force when hungry
-const SEEK_THRESHOLD    = 65;     // begin seeking below this hunger
-const FRICTION          = 0.84;
+const MAX_SPEED         = 220;      // ↑ was 104 — animals move much faster
+const WANDER_STRENGTH   = 420;      // ↑ was 160 — stronger random walk
+const SEEK_STRENGTH     = 620;      // ↑ was 285 — seek plants aggressively
+const SEEK_THRESHOLD    = 65;       // begin seeking below this hunger
+const FRICTION          = 0.965;    // ↑ was 0.89 — less drag, more glide
+const DIVINE_SEEK_WATER = 195;      // ↑ was 108 — flock to water harder
+const DIVINE_SEEK_SHELTER = 95;     // ↑ was 42
+const DIVINE_SEEK_SOCIAL = 120;     // ↑ was 52
+const DRINK_RADIUS_SQ   = 42 * 42;
+const SHELTER_RADIUS_SQ = 52 * 52;
+// Keep progression exciting without letting players max everything pre-disaster.
+const PACING_BIOMASS_MULT = 1.55;   // ↑ was 0.98 — more biomass per tick
+/** Divine keys where animals can drink / gain thirst relief (includes wide watery features). */
+const DIVINE_DRINK_KEYS = new Set([
+  'watering_hole', 'oasis', 'frozen_spring', 'anemone_garden', 'dumpster', 'fruit_grove', 'lichen_garden',
+  'dew_trap', 'river_stream', 'tidal_beacon',
+]);
 const MAX_ANIMALS       = 28;
 const MAX_PLANTS        = 40;
 const REPRO_RADIUS      = 22;
 const EAT_RADIUS        = 22;
-const REPRO_CHANCE      = 0.07;   // per second when near same species
+const REPRO_CHANCE      = 0.14;     // ↑ was 0.12 — slightly more breeding
 const HUNGER_MAX        = 100;
 const HUNGER_RESTORE    = 58;
 const PLANT_ENERGY_COST = 28;
-const SECONDS_PER_YEAR  = 60;
-const BASE_DISASTER_GAP = 3;
+const SECONDS_PER_YEAR  = 9;        // ↓ was 18 — years fly by ~2× faster
+const BASE_DISASTER_GAP = 0.32;     // ↓ was 0.75 — disasters much closer
 const OFFLINE_EFFICIENCY= 0.5;
 const OFFLINE_CAP_S     = 3600;
 const SAVE_INTERVAL_MS  = 30000;
-const SAVE_KEY          = 'pixel_preserve_v2';
+const SAVE_KEY          = 'pixel_preserve_v3';
 const LOG_MAX           = 60;
 
 /* ─────────────────────────────────────────────────────────────
@@ -58,7 +69,7 @@ const HABITATS = {
   tundra: {
     key: 'tundra', label: 'Tundra',
     desc: 'A frozen expanse where hardy creatures endure the long winter.',
-    biomassMultiplier: 0.65, stabilityBase: 88, disasterRisk: 0.30,
+    biomassMultiplier: 0.70, stabilityBase: 88, disasterRisk: 0.32,
     difficulty: 'medium',
     skyGradTop: '#1e2a40', skyGradBottom: '#4a6a88',
     groundColor: '#9ab8cc', groundAccent: '#7a9aae',
@@ -71,7 +82,7 @@ const HABITATS = {
   grassland: {
     key: 'grassland', label: 'Grassland',
     desc: 'Rolling meadows teeming with grazers and swift predators.',
-    biomassMultiplier: 1.0, stabilityBase: 70, disasterRisk: 0.60,
+    biomassMultiplier: 1.05, stabilityBase: 70, disasterRisk: 0.62,
     difficulty: 'easy',
     skyGradTop: '#2a4a80', skyGradBottom: '#6a90b8',
     groundColor: '#5a9438', groundAccent: '#3a7020',
@@ -84,7 +95,7 @@ const HABITATS = {
   desert: {
     key: 'desert', label: 'Desert',
     desc: 'A merciless landscape of heat and survival against all odds.',
-    biomassMultiplier: 0.55, stabilityBase: 50, disasterRisk: 0.90,
+    biomassMultiplier: 0.60, stabilityBase: 50, disasterRisk: 0.92,
     difficulty: 'hard',
     skyGradTop: '#7a4a18', skyGradBottom: '#b07838',
     groundColor: '#c8a050', groundAccent: '#a88030',
@@ -97,7 +108,7 @@ const HABITATS = {
   coral_reef: {
     key: 'coral_reef', label: 'Coral Reef',
     desc: 'A kaleidoscopic underwater world, as fragile as it is vibrant.',
-    biomassMultiplier: 0.85, stabilityBase: 65, disasterRisk: 0.55,
+    biomassMultiplier: 0.90, stabilityBase: 65, disasterRisk: 0.58,
     difficulty: 'medium',
     skyGradTop: '#0a1830', skyGradBottom: '#1a4870',
     groundColor: '#c8a870', groundAccent: '#a88850',
@@ -110,7 +121,7 @@ const HABITATS = {
   urban_wasteland: {
     key: 'urban_wasteland', label: 'Urban Wasteland',
     desc: 'Concrete ruins reclaimed by scavengers and opportunists.',
-    biomassMultiplier: 0.70, stabilityBase: 42, disasterRisk: 0.85,
+    biomassMultiplier: 0.75, stabilityBase: 42, disasterRisk: 0.88,
     difficulty: 'hard',
     skyGradTop: '#282830', skyGradBottom: '#484850',
     groundColor: '#5a5858', groundAccent: '#484545',
@@ -123,7 +134,7 @@ const HABITATS = {
   jungle: {
     key: 'jungle', label: 'Jungle',
     desc: 'Ancient canopy hides predators and treasures in equal measure.',
-    biomassMultiplier: 1.2, stabilityBase: 75, disasterRisk: 0.65,
+    biomassMultiplier: 1.25, stabilityBase: 75, disasterRisk: 0.68,
     difficulty: 'easy',
     skyGradTop: '#0e2010', skyGradBottom: '#1e4820',
     groundColor: '#284818', groundAccent: '#1a3010',
@@ -137,86 +148,161 @@ const HABITATS = {
 };
 
 /* ─────────────────────────────────────────────────────────────
-   UPGRADE BRANCHES (skill tree structure)
+   UPGRADE BRANCHES (7-tier skill trees)
 ───────────────────────────────────────────────────────────── */
 const UPGRADE_BRANCHES = [
   {
     key: 'biomass', label: 'Biomass Production', color: '#6d9e72',
-    upgrades: ['nitrogen_cycle', 'carbon_sequestration', 'trophic_cascade'],
+    upgrades: ['nitrogen_cycle', 'carbon_sequestration', 'trophic_cascade', 'solar_bounty', 'detritus_loop', 'symbiotic_growth', 'biosphere_engine'],
   },
   {
     key: 'survival', label: 'Species Survival', color: '#7ca8c2',
-    upgrades: ['immune_response', 'genetic_resilience', 'evolutionary_lock'],
+    upgrades: ['immune_response', 'genetic_resilience', 'evolutionary_lock', 'heat_hardening', 'plague_screen', 'migratory_instincts', 'longevity'],
   },
   {
     key: 'ecology', label: 'Ecosystem Balance', color: '#c8a050',
-    upgrades: ['mycorrhizal_network', 'keystone_species', 'apex_equilibrium'],
+    upgrades: ['mycorrhizal_network', 'rich_forage', 'keystone_species', 'apex_equilibrium', 'water_cycle', 'habitat_mosaic', 'gaia_equilibrium'],
   },
 ];
 
 /* ─────────────────────────────────────────────────────────────
-   UPGRADES — ADD NEW UPGRADE: add key here + entry in branch above.
+   UPGRADES — 7 tiers per branch, biomass buffed, costs tuned
 ───────────────────────────────────────────────────────────── */
 const UPGRADES = {
 
-  /* ── Biomass Branch ─────────────────────────────────────── */
+  /* ── Biomass Branch (7 tiers) ─────────────────────────── */
   nitrogen_cycle: {
     key: 'nitrogen_cycle', label: 'Nitrogen Cycle',
-    desc: 'Bacterial fixation enriches soil nutrients.',
-    cost: 150, requires: null, purchased: false,
-    apply(gs) { gs.biomassMultiplierBonus += 0.08; },
+    desc: 'Bacterial fixation enriches soil nutrients. +30% biomass.',
+    cost: 95, requires: null, purchased: false,
+    apply(gs) { gs.biomassMultiplierBonus += 0.30; },
   },
   carbon_sequestration: {
     key: 'carbon_sequestration', label: 'Carbon Sequestration',
-    desc: 'Organic matter locks atmospheric carbon into the soil.',
-    cost: 320, requires: 'nitrogen_cycle', purchased: false,
-    apply(gs) { gs.biomassMultiplierBonus += 0.15; },
+    desc: 'Organic matter locks atmospheric carbon into the soil. +45% biomass.',
+    cost: 195, requires: 'nitrogen_cycle', purchased: false,
+    apply(gs) { gs.biomassMultiplierBonus += 0.45; },
   },
   trophic_cascade: {
     key: 'trophic_cascade', label: 'Trophic Cascade',
-    desc: 'Apex predators reshape the web, doubling plant regrowth.',
-    cost: 650, requires: 'carbon_sequestration', purchased: false,
-    apply(gs) { gs.biomassMultiplierBonus += 0.25; gs.plantRespawnModifier *= 0.5; },
+    desc: 'Apex predators reshape the web. +70% biomass, plants respawn 2× faster.',
+    cost: 385, requires: 'carbon_sequestration', purchased: false,
+    apply(gs) { gs.biomassMultiplierBonus += 0.70; gs.plantRespawnModifier *= 0.5; },
   },
 
-  /* ── Survival Branch ────────────────────────────────────── */
+  solar_bounty: {
+    key: 'solar_bounty', label: 'Solar Bounty',
+    desc: 'Longer growing days. +55% biomass generation.',
+    cost: 650, requires: 'trophic_cascade', purchased: false,
+    apply(gs) { gs.biomassMultiplierBonus += 0.55; },
+  },
+  detritus_loop: {
+    key: 'detritus_loop', label: 'Detritus Loop',
+    desc: 'Nothing is wasted. +40% biomass, plants respawn 25% faster, stability recovers faster.',
+    cost: 980, requires: 'solar_bounty', purchased: false,
+    apply(gs) { gs.biomassMultiplierBonus += 0.40; gs.plantRespawnModifier *= 0.75; gs.stabilityRecoveryMult = (gs.stabilityRecoveryMult || 1) * 1.35; },
+  },
+  symbiotic_growth: {
+    key: 'symbiotic_growth', label: 'Symbiotic Growth',
+    desc: 'Mutualisms accelerate the whole web. +35% biomass, +12% reproduction.',
+    cost: 1450, requires: 'detritus_loop', purchased: false,
+    apply(gs) { gs.biomassMultiplierBonus += 0.35; gs.reproChanceBonus += 0.12; },
+  },
+  biosphere_engine: {
+    key: 'biosphere_engine', label: 'Biosphere Engine',
+    desc: 'A self-sustaining planet-scale loop. +50% biomass, stability recovers much faster, disasters are less damaging.',
+    cost: 2600, requires: 'symbiotic_growth', purchased: false,
+    apply(gs) { gs.biomassMultiplierBonus += 0.50; gs.stabilityRecoveryMult = (gs.stabilityRecoveryMult || 1) * 1.8; gs.disasterDamageMult = (gs.disasterDamageMult || 1) * 0.75; },
+  },
+
+  /* ── Survival Branch (7 tiers) ────────────────────────── */
   immune_response: {
     key: 'immune_response', label: 'Immune Response',
     desc: 'Adaptive immunity shields against environmental stress. Hunger decays 30% slower.',
-    cost: 200, requires: null, purchased: false,
+    cost: 125, requires: null, purchased: false,
     apply(gs) { gs.hungerDecayModifier *= 0.70; },
   },
   genetic_resilience: {
     key: 'genetic_resilience', label: 'Genetic Resilience',
     desc: 'Diverse genomes resist stressors. Hunger decays a further 35% slower.',
-    cost: 420, requires: 'immune_response', purchased: false,
+    cost: 250, requires: 'immune_response', purchased: false,
     apply(gs) { gs.hungerDecayModifier *= 0.65; },
   },
   evolutionary_lock: {
     key: 'evolutionary_lock', label: 'Evolutionary Lock',
     desc: 'Convergent evolution stabilises species. Unlocks Genetic Stabilization ability.',
-    cost: 880, requires: 'genetic_resilience', purchased: false,
+    cost: 520, requires: 'genetic_resilience', purchased: false,
     apply(gs) { gs.hungerDecayModifier *= 0.55; gs.stabilizationUnlocked = true; },
   },
 
-  /* ── Ecology Branch ─────────────────────────────────────── */
+  heat_hardening: {
+    key: 'heat_hardening', label: 'Heat Hardening',
+    desc: 'Heat tolerance spreads through the gene pool. Heatwaves are shorter and less punishing.',
+    cost: 680, requires: 'evolutionary_lock', purchased: false,
+    apply(gs) { gs.heatResist = (gs.heatResist || 0) + 0.45; },
+  },
+  plague_screen: {
+    key: 'plague_screen', label: 'Plague Screen',
+    desc: 'Population-level immunity. Plagues kill fewer animals.',
+    cost: 1050, requires: 'heat_hardening', purchased: false,
+    apply(gs) { gs.plagueResist = (gs.plagueResist || 0) + 0.55; },
+  },
+  migratory_instincts: {
+    key: 'migratory_instincts', label: 'Migratory Instincts',
+    desc: 'Movement and dispersal avoid local collapse. Animals spread out and clump less.',
+    cost: 1550, requires: 'plague_screen', purchased: false,
+    apply(gs) { gs.dispersalBonus = (gs.dispersalBonus || 0) + 0.65; },
+  },
+  longevity: {
+    key: 'longevity', label: 'Longevity',
+    desc: 'Lower baseline stress. Hunger decays 18% slower and stability loss from deaths is reduced.',
+    cost: 2800, requires: 'migratory_instincts', purchased: false,
+    apply(gs) { gs.hungerDecayModifier *= 0.82; gs.deathStabilityLossMult = (gs.deathStabilityLossMult || 1) * 0.65; },
+  },
+
+  /* ── Ecology Branch (7 tiers) ─────────────────────────── */
   mycorrhizal_network: {
     key: 'mycorrhizal_network', label: 'Mycorrhizal Network',
     desc: 'Fungal webs nourish root systems. Plants respawn 40% faster.',
-    cost: 260, requires: null, purchased: false,
+    cost: 165, requires: null, purchased: false,
     apply(gs) { gs.plantRespawnModifier *= 0.60; },
+  },
+  rich_forage: {
+    key: 'rich_forage', label: 'Rich Forage',
+    desc: 'Nutrient-dense grazing and browse. Hunger recovery from every meal is significantly higher.',
+    cost: 220, requires: 'mycorrhizal_network', purchased: false,
+    apply(gs) { gs.eatRestoreMult = (gs.eatRestoreMult || 1) * 1.28; },
   },
   keystone_species: {
     key: 'keystone_species', label: 'Keystone Species',
     desc: 'A single species upholds structure. Reproduction chance +70%.',
-    cost: 520, requires: 'mycorrhizal_network', purchased: false,
+    cost: 335, requires: 'rich_forage', purchased: false,
     apply(gs) { gs.reproChanceBonus += 0.70; },
   },
   apex_equilibrium: {
     key: 'apex_equilibrium', label: 'Apex Equilibrium',
     desc: 'Perfect trophic balance. Stability recovers 3× faster, disaster risk halved.',
-    cost: 1100, requires: 'keystone_species', purchased: false,
+    cost: 700, requires: 'keystone_species', purchased: false,
     apply(gs) { gs.stabilityRecoveryMult = (gs.stabilityRecoveryMult || 1) * 3; gs.disasterRiskMult *= 0.5; },
+  },
+
+  water_cycle: {
+    key: 'water_cycle', label: 'Water Cycle',
+    desc: 'Rain, runoff, recharge. Divine water features become stronger attractors and plants cluster around them.',
+    cost: 720, requires: 'apex_equilibrium', purchased: false,
+    apply(gs) { gs.waterAttractMult = (gs.waterAttractMult || 1) * 1.35; gs.plantNearDivineMult = (gs.plantNearDivineMult || 1) * 1.25; },
+  },
+  habitat_mosaic: {
+    key: 'habitat_mosaic', label: 'Habitat Mosaic',
+    desc: 'Patchwork structure reduces clumping and improves resilience. Stability recovers faster.',
+    cost: 1100, requires: 'water_cycle', purchased: false,
+    apply(gs) { gs.dispersalBonus = (gs.dispersalBonus || 0) + 0.55; gs.stabilityRecoveryMult = (gs.stabilityRecoveryMult || 1) * 1.35; },
+  },
+  gaia_equilibrium: {
+    key: 'gaia_equilibrium', label: 'Gaia Equilibrium',
+    desc: 'Near-perfect self-regulation. Disasters are less severe, stability trends upward and hunger loss is dampened across the ecosystem.',
+    cost: 3200, requires: 'habitat_mosaic', purchased: false,
+    apply(gs) { gs.stabilityRecoveryMult = (gs.stabilityRecoveryMult || 1) * 2.5; gs.hungerDecayModifier *= 0.92; gs.disasterDamageMult = (gs.disasterDamageMult || 1) * 0.60; gs.disasterRiskMult *= 0.75; },
   },
 
   /* ADD NEW UPGRADE HERE */
@@ -235,7 +321,7 @@ const GENETIC_STAB = {
 const DIVINE_OBJECTS = {
   tundra: [
     { key: 'ice_den',         label: 'Ice Den',          cost: 250, desc: 'Shelter from harsh winds. Hunger decay slows.', effect: 'shelter' },
-    { key: 'frozen_spring',   label: 'Frozen Spring',    cost: 320, desc: 'Meltwater opens growth pockets. Plants respawn faster.', effect: 'plantBoost' },
+    { key: 'frozen_spring',   label: 'Frozen Spring',    cost: 320, desc: 'Meltwater opens growth pockets. Plants respawn faster.', effect: 'plantBoost', span: 'horizontal' },
     { key: 'aurora_totem',    label: 'Aurora Totem',     cost: 420, desc: 'Celestial pulse strengthens life flow. Biomass gain rises.', effect: 'biomassBoost' },
     { key: 'lichen_garden',   label: 'Lichen Garden',    cost: 360, desc: 'Hardy lichen pads provide dependable food.', effect: 'eatBoost' },
     { key: 'thermal_vent',    label: 'Thermal Vent',     cost: 500, desc: 'Geothermal warmth helps breeding survive the cold.', effect: 'reproBoost' },
@@ -250,7 +336,7 @@ const DIVINE_OBJECTS = {
   desert: [
     { key: 'oasis',          label: 'Oasis',          cost: 300, desc: 'Water and palms improve feeding returns.', effect: 'eatBoost' },
     { key: 'rock_arch',      label: 'Rock Arch',      cost: 260, desc: 'Shade keeps creatures from burning energy.', effect: 'shelter' },
-    { key: 'dew_trap',       label: 'Dew Trap',       cost: 360, desc: 'Night condensation supports new plant shoots.', effect: 'plantBoost' },
+    { key: 'dew_trap',       label: 'Dew Trap',       cost: 360, desc: 'A seasonal arroyo — water traces the whole valley floor.', effect: 'plantBoost', span: 'horizontal' },
     { key: 'dune_nursery',   label: 'Dune Nursery',   cost: 420, desc: 'Protected nests increase successful births.', effect: 'reproBoost' },
     { key: 'mirage_obelisk', label: 'Mirage Obelisk', cost: 560, desc: 'Ancient artifact amplifies biomass flow.', effect: 'biomassBoost' },
   ],
@@ -258,8 +344,8 @@ const DIVINE_OBJECTS = {
     { key: 'sea_cavern',     label: 'Sea Cavern',      cost: 260, desc: 'A refuge from predators and currents.', effect: 'shelter' },
     { key: 'kelp_forest',    label: 'Kelp Forest',     cost: 320, desc: 'Living canopy accelerates marine flora.', effect: 'plantBoost' },
     { key: 'anemone_garden', label: 'Anemone Garden',  cost: 360, desc: 'Nutrient-rich beds improve feeding.', effect: 'eatBoost' },
-    { key: 'reef_arch',      label: 'Reef Arch',       cost: 420, desc: 'Calm eddies create ideal spawning grounds.', effect: 'reproBoost' },
-    { key: 'tidal_beacon',   label: 'Tidal Beacon',    cost: 540, desc: 'Guides nutrient currents for extra biomass.', effect: 'biomassBoost' },
+    { key: 'reef_arch',      label: 'Reef Arch',       cost: 420, desc: 'Calm eddies create ideal spawning grounds.', effect: 'reproBoost', span: 'horizontal' },
+    { key: 'tidal_beacon',   label: 'Tidal Beacon',    cost: 540, desc: 'Guides nutrient currents for extra biomass.', effect: 'biomassBoost', span: 'horizontal' },
   ],
   urban_wasteland: [
     { key: 'dumpster',       label: 'Dumpster',        cost: 180, desc: 'Scrap food boosts hunger recovery.', effect: 'eatBoost' },
@@ -270,7 +356,7 @@ const DIVINE_OBJECTS = {
   ],
   jungle: [
     { key: 'ancient_tree',   label: 'Ancient Tree',   cost: 300, desc: 'Towering shelter protects wildlife.', effect: 'shelter' },
-    { key: 'river_stream',   label: 'River Stream',   cost: 280, desc: 'Flowing nutrients speed plant regrowth.', effect: 'plantBoost' },
+    { key: 'river_stream',   label: 'River Stream',   cost: 280, desc: 'Flowing nutrients speed plant regrowth.', effect: 'plantBoost', span: 'horizontal' },
     { key: 'fruit_grove',    label: 'Fruit Grove',    cost: 340, desc: 'Abundant fruit helps animals recover hunger.', effect: 'eatBoost' },
     { key: 'canopy_bridge',  label: 'Canopy Bridge',  cost: 410, desc: 'Connected branches increase breeding contact.', effect: 'reproBoost' },
     { key: 'spirit_shrine',  label: 'Spirit Shrine',  cost: 560, desc: 'Ancient jungle resonance raises biomass yield.', effect: 'biomassBoost' },
@@ -282,7 +368,7 @@ const DIVINE_OBJECTS = {
 ───────────────────────────────────────────────────────────── */
 const GameState = {
   year: 0,
-  biomass: 50,
+  biomass: 80,                       // ↑ was 50 — stronger start
   biodiversity: 0,
   stability: 70,
   activeHabitat: null,
@@ -290,12 +376,20 @@ const GameState = {
   hungerDecayModifier: 1.0,
   plantRespawnModifier: 1.0,
   reproChanceBonus: 0,
+  eatRestoreMult: 1,
   stabilityRecoveryMult: 1,
   disasterRiskMult: 1.0,
+  disasterDamageMult: 1.0,
+  deathStabilityLossMult: 1.0,
+  heatResist: 0,
+  plagueResist: 0,
+  dispersalBonus: 0,
+  waterAttractMult: 1,
+  plantNearDivineMult: 1,
   stabilizationUnlocked: false,
   geneticStabActive: false,
   geneticStabEndsAt: 0,
-  nextDisasterYear: 3,
+  nextDisasterYear: 0.22,            // ↓ was 0.7 — first disaster much sooner
   log: [],
 };
 
@@ -316,9 +410,8 @@ function uid() { return ++uidCounter; }
 /* ─────────────────────────────────────────────────────────────
    GAME PHASE
 ───────────────────────────────────────────────────────────── */
-let gamePhase = 'select'; // 'select' | 'playing'
+let gamePhase = 'select'; // 'select' | 'lobby' (map visible, sim paused) | 'playing'
 let placementMode = null; // { objectDef } | null
-let selectedHabitatForStart = null;
 let draggingDivineObjectKey = null;
 
 /* ─────────────────────────────────────────────────────────────
@@ -615,9 +708,41 @@ function drawPlant(ctx, plant, habitat) {
 }
 
 /* ── Divine Hand object draw functions ──────────────────── */
+function drawHorizontalDivine(ctx, key, y) {
+  if (key === 'river_stream' || key === 'frozen_spring') {
+    ctx.fillStyle = key === 'frozen_spring' ? '#5a88b8' : '#3878a8';
+    ctx.fillRect(0, y - 8, CANVAS_W, 18);
+    ctx.fillStyle = 'rgba(180,220,255,0.38)';
+    for (let X = 6; X < CANVAS_W; X += 48) ctx.fillRect(X, y - 4, 28, 5);
+  } else if (key === 'dew_trap') {
+    ctx.fillStyle = '#6a6048';
+    ctx.fillRect(0, y - 6, CANVAS_W, 14);
+    ctx.fillStyle = '#5a7898';
+    ctx.fillRect(0, y - 4, CANVAS_W, 9);
+    ctx.fillStyle = 'rgba(160,200,230,0.22)';
+    ctx.fillRect(0, y - 2, CANVAS_W, 4);
+  } else if (key === 'tidal_beacon') {
+    ctx.fillStyle = '#2a5888';
+    ctx.fillRect(0, y - 5, CANVAS_W, 12);
+    ctx.fillStyle = 'rgba(90,200,255,0.18)';
+    for (let X = 0; X < CANVAS_W; X += 24) ctx.fillRect(X, y - 3, 12, 4);
+  } else if (key === 'reef_arch') {
+    ctx.fillStyle = '#3a78a0';
+    ctx.fillRect(0, y - 4, CANVAS_W, 9);
+    ctx.fillStyle = 'rgba(200,240,255,0.15)';
+    ctx.fillRect(0, y - 2, CANVAS_W, 4);
+  }
+}
+
 function drawDivineObject(ctx, obj) {
-  const {x, y, key} = obj;
+  const {x, y, key, span} = obj;
   ctx.save();
+
+  if (span === 'horizontal') {
+    drawHorizontalDivine(ctx, key, y);
+    ctx.restore();
+    return;
+  }
 
   if (key === 'ice_den' || key === 'sea_cavern' || key === 'drain_pipe' || key === 'rock_arch') {
     // Cave/shelter: stone arch
@@ -630,8 +755,8 @@ function drawDivineObject(ctx, obj) {
     ctx.fillStyle = key === 'ice_den' ? '#c0e8ff' : key === 'sea_cavern' ? '#6098c8' : '#686868';
     ctx.fillRect(x-18, y-28, 36, 6);
 
-  } else if (key === 'watering_hole' || key === 'oasis' || key === 'frozen_spring') {
-    // Water feature
+  } else if (key === 'watering_hole' || key === 'oasis') {
+    // Water feature (local pool)
     ctx.fillStyle = key === 'oasis' ? '#2888a8' : '#4878b8';
     ctx.beginPath(); ctx.ellipse(x, y-4, 20, 10, 0, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = 'rgba(180,230,255,0.4)';
@@ -686,14 +811,7 @@ function drawDivineObject(ctx, obj) {
     ctx.fillStyle = key === 'fruit_grove' ? '#d06030' : '#389020';
     ctx.beginPath(); ctx.arc(x+6, y-58, 14, 0, Math.PI*2); ctx.fill();
 
-  } else if (key === 'river_stream' || key === 'reef_arch') {
-    // Flowing river
-    ctx.fillStyle = '#3878a8';
-    ctx.fillRect(x-40, y-6, 80, 12);
-    ctx.fillStyle = 'rgba(180,220,255,0.35)';
-    ctx.fillRect(x-38, y-4, 30, 4);
-    ctx.fillRect(x+4, y-2, 25, 4);
-  } else if (key === 'aurora_totem' || key === 'sun_granary' || key === 'mirage_obelisk' || key === 'tidal_beacon' || key === 'recycling_hub' || key === 'spirit_shrine') {
+  } else if (key === 'aurora_totem' || key === 'sun_granary' || key === 'mirage_obelisk' || key === 'recycling_hub' || key === 'spirit_shrine') {
     ctx.fillStyle = '#6a5ab0';
     ctx.fillRect(x-6, y-34, 12, 38);
     ctx.fillStyle = '#c8a050';
@@ -833,11 +951,13 @@ function drawOverlays() {
 
 function renderFrame() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-  const h = HABITATS[GameState.activeHabitat];
+  const key = GameState.activeHabitat;
+  if (!key || !HABITATS[key]) return;
+  const h = HABITATS[key];
   drawBackground(h);
-  drawDivineObjects(GameState.activeHabitat);
-  drawPlants(GameState.activeHabitat);
-  drawAnimals(GameState.activeHabitat);
+  drawDivineObjects(key);
+  drawPlants(key);
+  drawAnimals(key);
   drawOverlays();
 }
 
@@ -850,6 +970,70 @@ function groundBand(habitat) {
   return { minY: groundY + 8, maxY: CANVAS_H - 12 };
 }
 
+function clampPlantXY(habitatKey, x, y) {
+  const h = HABITATS[habitatKey];
+  const { minY, maxY } = groundBand(h);
+  return {
+    x: Math.max(16, Math.min(CANVAS_W - 16, x)),
+    y: Math.max(minY, Math.min(maxY, y)),
+  };
+}
+
+function pickPlantSpotNearDivine(habitatKey) {
+  const boost = ALL_PLACED.filter(o => o.habitat === habitatKey && o.effect === 'plantBoost');
+  const nearMult = GameState.plantNearDivineMult || 1;
+  if (!boost.length || Math.random() > (0.52 * nearMult)) return null;
+  const o = boost[Math.floor(Math.random() * boost.length)];
+  let x, y;
+  if (o.span === 'horizontal') {
+    x = 24 + Math.random() * (CANVAS_W - 48);
+    y = o.y + (Math.random() - 0.5) * 40;
+  } else {
+    x = o.x + (Math.random() - 0.5) * 110;
+    y = o.y + (Math.random() - 0.5) * 36;
+  }
+  return clampPlantXY(habitatKey, x, y);
+}
+
+function divineTargetPoint(animal, o) {
+  if (o.span === 'horizontal') {
+    return { px: Math.max(12, Math.min(CANVAS_W - 12, animal.x)), py: o.y };
+  }
+  return { px: o.x, py: o.y };
+}
+
+function drawDivineDragPreview(objDef) {
+  if (!drawDivineDragPreview._canvas) {
+    const c = document.createElement('canvas');
+    c.width = 260;
+    c.height = 180;
+    c.style.position = 'fixed';
+    c.style.left = '-9999px';
+    c.style.top = '-9999px';
+    c.style.pointerEvents = 'none';
+    c.style.opacity = '0';
+    document.body.appendChild(c);
+    drawDivineDragPreview._canvas = c;
+    drawDivineDragPreview._ctx = c.getContext('2d');
+    drawDivineDragPreview._ctx.imageSmoothingEnabled = false;
+  }
+
+  const c = drawDivineDragPreview._canvas;
+  const pctx = drawDivineDragPreview._ctx;
+  pctx.clearRect(0, 0, c.width, c.height);
+
+  if (objDef.span === 'horizontal') {
+    pctx.save();
+    pctx.translate(0, 22);
+    pctx.scale(0.32, 0.32);
+    drawHorizontalDivine(pctx, objDef.key, 520);
+    pctx.restore();
+  } else {
+    drawDivineObject(pctx, { key: objDef.key, x: 130, y: 155, span: 'local' });
+  }
+  return c;
+}
+
 function makeAnimal(species, habitatKey, x, y) {
   const h = HABITATS[habitatKey];
   const {minY, maxY} = groundBand(h);
@@ -859,8 +1043,8 @@ function makeAnimal(species, habitatKey, x, y) {
     habitat:         habitatKey,
     x:               x ?? (30 + Math.random() * (CANVAS_W - 60)),
     y:               y ?? (minY + Math.random() * (maxY - minY)),
-    vx:              (Math.random() - 0.5) * 20,
-    vy:              (Math.random() - 0.5) * 10,
+    vx:              (Math.random() - 0.5) * 36,
+    vy:              (Math.random() - 0.5) * 18,
     hunger:          65 + Math.random() * 30,
     hungerDecayRate: h.hungerDecayBase,
     age:             0,
@@ -872,11 +1056,12 @@ function makeAnimal(species, habitatKey, x, y) {
 function makePlant(habitatKey, x, y) {
   const h = HABITATS[habitatKey];
   const {minY, maxY} = groundBand(h);
+  const near = (x == null && y == null) ? pickPlantSpotNearDivine(habitatKey) : null;
   return {
     id:      uid(),
     habitat: habitatKey,
-    x:       x ?? (20 + Math.random() * (CANVAS_W - 40)),
-    y:       y ?? (minY + Math.random() * (maxY - minY)),
+    x:       x ?? near?.x ?? (20 + Math.random() * (CANVAS_W - 40)),
+    y:       y ?? near?.y ?? (minY + Math.random() * (maxY - minY)),
     energy:  80 + Math.random() * 20,
     alive:   true,
   };
@@ -901,19 +1086,44 @@ function initHabitat(key) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   PHYSICS — Brownian motion + seek + bounce
+   PHYSICS — Brownian motion + seek + bounce  (FASTER)
 ───────────────────────────────────────────────────────────── */
 function updatePhysics(dt, habitatKey) {
   const h = HABITATS[habitatKey];
   const {minY, maxY} = groundBand(h);
   const habitatPlants = ALL_PLANTS.filter(p => p.habitat === habitatKey && p.alive && p.energy > 0);
+  const divineHere = ALL_PLACED.filter(o => o.habitat === habitatKey);
+  const dispersal = Math.max(0, GameState.dispersalBonus || 0);
+  const sepRadius = 34 + 8 * dispersal;
+  const sepRadiusSq = sepRadius * sepRadius;
+  const sepStrength = (90 + 60 * dispersal);
 
   ALL_ANIMALS.forEach(a => {
     if (a.habitat !== habitatKey) return;
 
-    // Brownian wander
+    // Brownian wander — Y multiplier increased for land animals
     a.vx += (Math.random() - 0.5) * WANDER_STRENGTH * dt;
-    a.vy += (Math.random() - 0.5) * WANDER_STRENGTH * (h.aquatic ? 0.9 : 0.3) * dt;
+    a.vy += (Math.random() - 0.5) * WANDER_STRENGTH * (h.aquatic ? 0.9 : 0.75) * dt;
+
+    // Separation (prevents clumping; lightweight boids-style repulsion)
+    let pushX = 0, pushY = 0, nearCount = 0;
+    for (const b of ALL_ANIMALS) {
+      if (b === a || b.habitat !== habitatKey) continue;
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 > 1 && d2 < sepRadiusSq) {
+        const inv = 1 / Math.sqrt(d2);
+        const w = (1 - Math.sqrt(d2) / sepRadius);
+        pushX += dx * inv * w;
+        pushY += dy * inv * w;
+        nearCount++;
+      }
+    }
+    if (nearCount > 0) {
+      const vyMul = h.aquatic ? 1 : 0.85;  // ↑ was 0.55
+      a.vx += (pushX / nearCount) * sepStrength * dt;
+      a.vy += (pushY / nearCount) * sepStrength * vyMul * dt;
+    }
 
     // Seek nearest plant when hungry
     if (a.hunger < SEEK_THRESHOLD && habitatPlants.length > 0) {
@@ -928,6 +1138,27 @@ function updatePhysics(dt, habitatKey) {
         const dist = Math.sqrt(nearestDist2);
         a.vx += (nearestPlant.x - a.x) / dist * SEEK_STRENGTH * hungerFactor * dt;
         a.vy += (nearestPlant.y - a.y) / dist * SEEK_STRENGTH * hungerFactor * dt;
+      }
+    }
+
+    // Approach divine features (water to drink, shelter to rest, social sites to gather)
+    for (const o of divineHere) {
+      const { px, py } = divineTargetPoint(a, o);
+      const dx = px - a.x, dy = py - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      let strength = 0;
+      if (DIVINE_DRINK_KEYS.has(o.key) && a.hunger < 76) {
+        const waterMult = GameState.waterAttractMult || 1;
+        strength = DIVINE_SEEK_WATER * waterMult * (1 - a.hunger / 102);
+      } else if (o.effect === 'shelter' && a.hunger > 40 && a.hunger < 92) {
+        strength = DIVINE_SEEK_SHELTER * (0.65 + 0.35 * Math.sin(a.id * 0.31 + a.age * 0.8));
+      } else if (o.effect === 'reproBoost' && a.hunger > 56) {
+        strength = DIVINE_SEEK_SOCIAL;
+      }
+      if (strength > 0 && dist > 5) {
+        const vyMul = h.aquatic ? 1 : 0.85;  // ↑ was 0.52
+        a.vx += (dx / dist) * strength * dt;
+        a.vy += (dy / dist) * strength * vyMul * dt;
       }
     }
 
@@ -948,7 +1179,7 @@ function updatePhysics(dt, habitatKey) {
     if (a.y > maxY)          { a.y = maxY;          a.vy = -Math.abs(a.vy); }
 
     a.frameTimer += dt;
-    if (a.frameTimer > 0.28) { a.frame++; a.frameTimer = 0; }
+    if (a.frameTimer > 0.12) { a.frame++; a.frameTimer = 0; }  // ↑ was 0.28 — 2.3× faster animation
     a.age += dt;
   });
 }
@@ -965,14 +1196,26 @@ function checkInteractions(dt, habitatKey) {
   const aliveCount     = habitatAnimals.filter(a => !a._dead).length;
   const toKill  = [];
   const toSpawn = [];
-  const eatRestore = eatBoostActive ? HUNGER_RESTORE * 1.45 : HUNGER_RESTORE;
-  const reproChance = REPRO_CHANCE * (1 + GameState.reproChanceBonus) * (reproBoostActive ? 1.5 : 1);
+  const eatRestore = HUNGER_RESTORE * (GameState.eatRestoreMult || 1) * (eatBoostActive ? 1.42 : 1);
+  const divineHere = ALL_PLACED.filter(o => o.habitat === habitatKey);
 
   habitatAnimals.forEach(a => {
     if (a._dead) return;
 
-    // Hunger decay
-    const decay = a.hungerDecayRate * GameState.hungerDecayModifier * dt;
+    let shelterDecay = 1;
+    let nearDrink = false;
+    let nearSocial = false;
+    for (const o of divineHere) {
+      const { px, py } = divineTargetPoint(a, o);
+      const dx = px - a.x, dy = py - a.y;
+      const d2 = dx * dx + dy * dy;
+      if (o.effect === 'shelter' && d2 < SHELTER_RADIUS_SQ) shelterDecay *= 0.66;
+      if (DIVINE_DRINK_KEYS.has(o.key) && d2 < DRINK_RADIUS_SQ) nearDrink = true;
+      if (o.effect === 'reproBoost' && d2 < 58 * 58) nearSocial = true;
+    }
+
+    // Hunger decay (slower while resting in shelter)
+    const decay = a.hungerDecayRate * GameState.hungerDecayModifier * shelterDecay * dt;
     a.hunger -= decay;
 
     if (a.hunger <= 0) {
@@ -996,6 +1239,13 @@ function checkInteractions(dt, habitatKey) {
       if (closest.energy <= 0) { closest.alive = false; closest.energy = 0; }
       a.hunger = Math.min(HUNGER_MAX, a.hunger + eatRestore);
     }
+
+    if (nearDrink) {
+      const sip = (14 + (eatBoostActive ? 6 : 0)) * dt;
+      a.hunger = Math.min(HUNGER_MAX, a.hunger + sip);
+    }
+
+    const reproChance = REPRO_CHANCE * (1 + GameState.reproChanceBonus) * (reproBoostActive ? 1.5 : 1) * (nearSocial ? 1.38 : 1);
 
     // Reproduce with nearby same species
     if (aliveCount < MAX_ANIMALS && Math.random() < reproChance * dt) {
@@ -1021,7 +1271,8 @@ function checkInteractions(dt, habitatKey) {
     if (idx !== -1) {
       pushLog(`[Y${GameState.year.toFixed(1)}] A ${fmtSpecies(ALL_ANIMALS[idx].species)} perished.`, 'disaster');
       ALL_ANIMALS.splice(idx, 1);
-      GameState.stability = Math.max(0, GameState.stability - 0.6);
+      const loss = 0.6 * (GameState.deathStabilityLossMult || 1);
+      GameState.stability = Math.max(0, GameState.stability - loss);
     }
   });
   toSpawn.forEach(a => ALL_ANIMALS.push(a));
@@ -1036,7 +1287,7 @@ function tickEconomy(dt, habitatKey) {
   const h     = HABITATS[habitatKey];
   const count = ALL_ANIMALS.filter(a => a.habitat === habitatKey).length;
 
-  GameState.biomass += count * h.biomassMultiplier * (1 + GameState.biomassMultiplierBonus) * dt;
+  GameState.biomass += count * h.biomassMultiplier * (1 + GameState.biomassMultiplierBonus) * PACING_BIOMASS_MULT * dt;
   GameState.year    += dt / SECONDS_PER_YEAR;
 
   const diff = h.stabilityBase - GameState.stability;
@@ -1071,15 +1322,15 @@ function tickPlantRespawn(habitatKey) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   DISASTERS — ADD NEW TYPE: add case in resolveDisaster + types array
+   DISASTERS — faster, deadlier, earlier
 ───────────────────────────────────────────────────────────── */
 function checkDisasters() {
   if (GameState.year >= GameState.nextDisasterYear) {
     const h = HABITATS[GameState.activeHabitat];
-    if (Math.random() < h.disasterRisk * GameState.disasterRiskMult) {
+    if (Math.random() < Math.min(0.985, h.disasterRisk * GameState.disasterRiskMult * 1.12)) {
       spawnDisaster(GameState.activeHabitat);
     }
-    GameState.nextDisasterYear = GameState.year + BASE_DISASTER_GAP + Math.random() * 2.5;
+    GameState.nextDisasterYear = GameState.year + BASE_DISASTER_GAP + Math.random() * 0.45;
   }
   if (disasterActive && performance.now() >= disasterEndsAt) {
     disasterActive = false;
@@ -1097,12 +1348,16 @@ function spawnDisaster(habitatKey) {
 }
 
 function resolveDisaster(type, habitatKey) {
-  GameState.stability = Math.max(0, GameState.stability - 14);
+  const dmg = (GameState.disasterDamageMult || 1);
+  GameState.stability = Math.max(0, GameState.stability - 14 * dmg);
   disasterActive = true; disasterType = type;
 
   if (type === 'heatwave') {
-    ALL_ANIMALS.filter(a => a.habitat === habitatKey).forEach(a => { a.hungerDecayRate *= 2.2; });
-    disasterEndsAt = performance.now() + 18000;
+    const resist = Math.max(0, Math.min(0.85, GameState.heatResist || 0));
+    const mult = 2.2 - 0.9 * resist;
+    const dur  = 13200 - 4200 * resist;
+    ALL_ANIMALS.filter(a => a.habitat === habitatKey).forEach(a => { a.hungerDecayRate *= mult; });
+    disasterEndsAt = performance.now() + dur;
     pushLog(`[Y${GameState.year.toFixed(1)}] Heatwave strikes the ${HABITATS[habitatKey].label}!`, 'disaster');
   } else if (type === 'plague') {
     disasterEndsAt = performance.now() + 3000;
@@ -1110,7 +1365,9 @@ function resolveDisaster(type, habitatKey) {
     if (!hab.length) return;
     const species = hab[Math.floor(Math.random() * hab.length)].species;
     const victims = ALL_ANIMALS.filter(a => a.habitat === habitatKey && a.species === species);
-    const killCount = Math.ceil(victims.length * 0.5);
+    const resist = Math.max(0, Math.min(0.85, GameState.plagueResist || 0));
+    const frac = 0.5 - 0.30 * resist;
+    const killCount = Math.max(1, Math.ceil(victims.length * frac));
     for (let i = 0; i < killCount; i++) {
       const idx = ALL_ANIMALS.indexOf(victims[i]);
       if (idx !== -1) ALL_ANIMALS.splice(idx, 1);
@@ -1166,10 +1423,15 @@ function renderMapTab() {
 
   const rate = (animals.length * h.biomassMultiplier * (1 + GameState.biomassMultiplierBonus)).toFixed(2);
   const yearsLeft = Math.max(0, GameState.nextDisasterYear - GameState.year);
+  const bioPct = ((GameState.biomassMultiplierBonus) * 100).toFixed(0);
+  const totalBioMult = ((1 + GameState.biomassMultiplierBonus) * 100).toFixed(0);
+
   document.getElementById('habitat-stats-panel').innerHTML = `
     <div class="stat-row"><span class="stat-row-label">Animals</span><span class="stat-row-val blue">${animals.length} / ${MAX_ANIMALS}</span></div>
     <div class="stat-row"><span class="stat-row-label">Plants</span><span class="stat-row-val green">${plants.length} / ${MAX_PLANTS}</span></div>
     <div class="stat-row"><span class="stat-row-label">Biomass Rate</span><span class="stat-row-val gold">${rate} / s</span></div>
+    <div class="stat-row"><span class="stat-row-label">Biomass Bonus</span><span class="stat-row-val gold">+${bioPct}%</span></div>
+    <div class="stat-row"><span class="stat-row-label">Total Multiplier</span><span class="stat-row-val gold">${totalBioMult}%</span></div>
     <div class="stat-row"><span class="stat-row-label">Stability</span><span class="stat-row-val ${GameState.stability>65?'green':GameState.stability>35?'gold':'red'}">${GameState.stability.toFixed(0)}%</span></div>
     <div class="stat-row"><span class="stat-row-label">Disaster Risk</span><span class="stat-row-val">${(h.disasterRisk*100).toFixed(0)}%</span></div>
     <div class="stat-row"><span class="stat-row-label">Next Disaster</span><span class="stat-row-val warn">~${yearsLeft.toFixed(2)} yr</span></div>
@@ -1283,15 +1545,17 @@ function activateStabilization() {
 
 /* ── DIVINE HAND tab ─────────────────────────────────────── */
 function renderDivineTab() {
-  const habitatObjs = DIVINE_OBJECTS[GameState.activeHabitat] || [];
+  const habKey = GameState.activeHabitat;
+  const habitatObjs = DIVINE_OBJECTS[habKey] || [];
   const list = document.getElementById('divine-list');
-  const stateKey = ALL_PLACED.filter(o => o.habitat === GameState.activeHabitat).map(o => o.key).join('|') + Math.floor(GameState.biomass/10);
+  const placedSig = ALL_PLACED.filter(o => o.habitat === habKey).map(o => o.key).sort().join('|');
+  const stateKey = `${habKey}|${placedSig}|${Math.floor(GameState.biomass / 10)}`;
   if (list.dataset.sk === stateKey) return;
   list.dataset.sk = stateKey;
 
   list.innerHTML = '';
   habitatObjs.forEach(obj => {
-    const placed = ALL_PLACED.some(o => o.key === obj.key && o.habitat === GameState.activeHabitat);
+    const placed = ALL_PLACED.some(o => o.key === obj.key && o.habitat === habKey);
     const canAfford = GameState.biomass >= obj.cost;
 
     const card = document.createElement('div');
@@ -1313,9 +1577,14 @@ function renderDivineTab() {
   list.querySelectorAll('.divine-card[draggable="true"]').forEach(card => {
     card.addEventListener('dragstart', (e) => {
       draggingDivineObjectKey = card.dataset.dkey;
+      const objDef = habitatObjs.find(o => o.key === draggingDivineObjectKey);
       if (e.dataTransfer) {
         e.dataTransfer.setData('text/plain', draggingDivineObjectKey);
         e.dataTransfer.effectAllowed = 'copy';
+        if (objDef) {
+          const prev = drawDivineDragPreview(objDef);
+          e.dataTransfer.setDragImage(prev, Math.floor(prev.width / 2), Math.floor(prev.height / 2));
+        }
       }
     });
     card.addEventListener('dragend', () => { draggingDivineObjectKey = null; });
@@ -1327,9 +1596,13 @@ function renderDivineTab() {
 }
 
 function enterPlacementMode(objectKey) {
+  if (gamePhase !== 'playing') return;
   const habitatObjs = DIVINE_OBJECTS[GameState.activeHabitat] || [];
   const objDef = habitatObjs.find(o => o.key === objectKey);
   if (!objDef) return;
+  // FIX: prevent duplicate placement via click
+  const alreadyPlaced = ALL_PLACED.some(o => o.habitat === GameState.activeHabitat && o.key === objectKey);
+  if (alreadyPlaced) return;
   if (GameState.biomass < objDef.cost) return;
 
   placementMode = { objDef };
@@ -1354,13 +1627,15 @@ function canvasCoord(e) {
 
 function placeObject(objDef, x, y) {
   GameState.biomass -= objDef.cost;
-  ALL_PLACED.push({ key: objDef.key, label: objDef.label, habitat: GameState.activeHabitat, x, y, effect: objDef.effect });
+  ALL_PLACED.push({
+    key: objDef.key, label: objDef.label, habitat: GameState.activeHabitat,
+    x, y, effect: objDef.effect, span: objDef.span || 'local',
+  });
   applyDivineEffect(objDef.effect);
   pushLog(`[Y${GameState.year.toFixed(1)}] Placed ${objDef.label} in the ${HABITATS[GameState.activeHabitat].label}.`, 'info');
 }
 
 function applyDivineEffect(effect) {
-  if (effect === 'shelter')     GameState.hungerDecayModifier *= 0.75;
   if (effect === 'plantBoost')  GameState.plantRespawnModifier *= 0.62;
   if (effect === 'eatBoost')    eatBoostActive = true;
   if (effect === 'reproBoost')  reproBoostActive = true;
@@ -1411,8 +1686,11 @@ function switchTab(tabName) {
 function showSelectionScreen() {
   document.getElementById('habitat-select-screen').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
-  document.getElementById('selected-habitat-label').textContent = 'Selected Habitat: None';
-  document.getElementById('start-game-btn').disabled = true;
+  const ov = document.getElementById('game-start-overlay');
+  if (ov) {
+    ov.classList.add('hidden');
+    ov.setAttribute('aria-hidden', 'true');
+  }
   buildSelectionGrid();
 }
 
@@ -1454,30 +1732,44 @@ function buildSelectionGrid() {
 }
 
 function selectHabitat(key) {
-  selectedHabitatForStart = key;
-  document.getElementById('selected-habitat-label').textContent = `Selected Habitat: ${HABITATS[key].label}`;
-  document.getElementById('start-game-btn').disabled = false;
+  GameState.activeHabitat = key;
+  gamePhase = 'lobby';
+  document.getElementById('habitat-select-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
 
   document.querySelectorAll('.habitat-card').forEach((card, idx) => {
     const habitat = Object.values(HABITATS)[idx];
     card.classList.toggle('selected', habitat.key === key);
   });
+
+  const overlay = document.getElementById('game-start-overlay');
+  if (overlay) {
+    overlay.classList.remove('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+
+  document.getElementById('divine-list').dataset.sk = '';
+  renderMapTab();
+  renderSkillsTab();
+  renderDivineTab();
+  lastTimestamp = 0;
+  requestAnimationFrame(gameLoop);
 }
 
-function launchSelectedHabitat() {
-  if (!selectedHabitatForStart) return;
-  const key = selectedHabitatForStart;
-  GameState.activeHabitat = key;
-  gamePhase = 'playing';
-  document.getElementById('habitat-select-screen').classList.add('hidden');
-  document.getElementById('app').classList.remove('hidden');
+function beginSimulation() {
+  if (gamePhase !== 'lobby' || !GameState.activeHabitat) return;
+  const key = GameState.activeHabitat;
   initHabitat(key);
+  gamePhase = 'playing';
+  const overlay = document.getElementById('game-start-overlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
   pushLog(`[Y0.0] You have entered the ${HABITATS[key].label}. Your stewardship begins.`, 'info');
   renderMapTab();
   renderSkillsTab();
   renderDivineTab();
-  renderFrame();
-  requestAnimationFrame(ts => { lastTimestamp = ts; requestAnimationFrame(gameLoop); });
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1485,7 +1777,7 @@ function launchSelectedHabitat() {
 ───────────────────────────────────────────────────────────── */
 function buildSave() {
   return JSON.stringify({
-    version:  2,
+    version:  3,
     savedAt:  Date.now(),
     gameState: {
       year: GameState.year, biomass: GameState.biomass,
@@ -1494,6 +1786,7 @@ function buildSave() {
       hungerDecayModifier: GameState.hungerDecayModifier,
       plantRespawnModifier: GameState.plantRespawnModifier,
       reproChanceBonus: GameState.reproChanceBonus,
+      eatRestoreMult: GameState.eatRestoreMult,
       stabilityRecoveryMult: GameState.stabilityRecoveryMult,
       disasterRiskMult: GameState.disasterRiskMult,
       stabilizationUnlocked: GameState.stabilizationUnlocked,
@@ -1520,10 +1813,18 @@ function loadGame() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return false;
     const save = JSON.parse(raw);
-    if (!save || save.version !== 2) return false;
+    if (!save || (save.version !== 2 && save.version !== 3)) return false;
 
     Object.assign(GameState, save.gameState);
     GameState.log = save.gameState.log || [];
+    if (GameState.eatRestoreMult == null || GameState.eatRestoreMult <= 0) GameState.eatRestoreMult = 1;
+    if (GameState.disasterDamageMult == null || GameState.disasterDamageMult <= 0) GameState.disasterDamageMult = 1;
+    if (GameState.deathStabilityLossMult == null || GameState.deathStabilityLossMult <= 0) GameState.deathStabilityLossMult = 1;
+    if (GameState.waterAttractMult == null || GameState.waterAttractMult <= 0) GameState.waterAttractMult = 1;
+    if (GameState.plantNearDivineMult == null || GameState.plantNearDivineMult <= 0) GameState.plantNearDivineMult = 1;
+    if (GameState.dispersalBonus == null || GameState.dispersalBonus < 0) GameState.dispersalBonus = 0;
+    if (GameState.heatResist == null || GameState.heatResist < 0) GameState.heatResist = 0;
+    if (GameState.plagueResist == null || GameState.plagueResist < 0) GameState.plagueResist = 0;
 
     Object.entries(save.upgrades || {}).forEach(([k, v]) => {
       if (UPGRADES[k] && v.purchased) { UPGRADES[k].purchased = true; UPGRADES[k].apply(GameState); }
@@ -1536,7 +1837,11 @@ function loadGame() {
     ALL_PLANTS = (save.plants || []).map(p => ({
       ...makePlant(p.habitat, p.x, p.y), id: p.id, energy: p.energy, alive: p.alive,
     }));
-    ALL_PLACED = save.placed || [];
+    const horizontalKeys = new Set(['river_stream', 'frozen_spring', 'dew_trap', 'tidal_beacon', 'reef_arch']);
+    ALL_PLACED = (save.placed || []).map(p => ({
+      ...p,
+      span: p.span || (horizontalKeys.has(p.key) ? 'horizontal' : 'local'),
+    }));
     eatBoostActive   = save.eatBoostActive   || false;
     reproBoostActive = save.reproBoostActive  || false;
 
@@ -1576,13 +1881,20 @@ function restartGame() {
 
   // Reset all state
   Object.assign(GameState, {
-    year: 0, biomass: 50, biodiversity: 0, stability: 70,
+    year: 0, biomass: 80, biodiversity: 0, stability: 70,
     activeHabitat: null, biomassMultiplierBonus: 0,
     hungerDecayModifier: 1.0, plantRespawnModifier: 1.0,
-    reproChanceBonus: 0, stabilityRecoveryMult: 1,
+    reproChanceBonus: 0, eatRestoreMult: 1, stabilityRecoveryMult: 1,
     disasterRiskMult: 1.0, stabilizationUnlocked: false,
+    disasterDamageMult: 1.0,
+    deathStabilityLossMult: 1.0,
+    heatResist: 0,
+    plagueResist: 0,
+    dispersalBonus: 0,
+    waterAttractMult: 1,
+    plantNearDivineMult: 1,
     geneticStabActive: false, geneticStabEndsAt: 0,
-    nextDisasterYear: 3, log: [],
+    nextDisasterYear: 0.22, log: [],
   });
   Object.values(UPGRADES).forEach(u => { u.purchased = false; });
   ALL_ANIMALS = []; ALL_PLANTS = []; ALL_PLACED = [];
@@ -1591,7 +1903,6 @@ function restartGame() {
   eatBoostActive = false; reproBoostActive = false;
   disasterActive = false; secondAccumulator = 0;
   gamePhase = 'select';
-  selectedHabitatForStart = null;
   draggingDivineObjectKey = null;
 
   showSelectionScreen();
@@ -1619,12 +1930,21 @@ function preloadSprites() {
 let lastTimestamp = 0;
 
 function gameLoop(timestamp) {
-  const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1);
+  if (gamePhase === 'select') return;
+
+  const dt = lastTimestamp ? Math.min((timestamp - lastTimestamp) / 1000, 0.1) : 0;
   lastTimestamp = timestamp;
+  const key = GameState.activeHabitat;
+
+  if (gamePhase === 'lobby') {
+    renderFrame();
+    updateUI();
+    requestAnimationFrame(gameLoop);
+    return;
+  }
 
   if (gamePhase !== 'playing') return;
 
-  const key = GameState.activeHabitat;
   updatePhysics(dt, key);
   checkInteractions(dt, key);
   tickEconomy(dt, key);
@@ -1647,25 +1967,25 @@ function setupEventListeners() {
   });
 
   document.getElementById('restart-btn').addEventListener('click', restartGame);
-  document.getElementById('start-game-btn').addEventListener('click', launchSelectedHabitat);
+  document.getElementById('main-start-game-btn').addEventListener('click', beginSimulation);
 
   document.getElementById('placing-cancel').addEventListener('click', exitPlacementMode);
 
   canvas.addEventListener('click', e => {
-    if (!placementMode) return;
+    if (gamePhase !== 'playing' || !placementMode) return;
     const {x, y} = canvasCoord(e);
     placeObject(placementMode.objDef, x, y);
     exitPlacementMode();
   });
 
   canvas.addEventListener('dragover', e => {
-    if (!draggingDivineObjectKey) return;
+    if (gamePhase !== 'playing' || !draggingDivineObjectKey) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
   });
 
   canvas.addEventListener('drop', e => {
-    if (!draggingDivineObjectKey) return;
+    if (gamePhase !== 'playing' || !draggingDivineObjectKey) return;
     e.preventDefault();
     const habitatObjs = DIVINE_OBJECTS[GameState.activeHabitat] || [];
     const objDef = habitatObjs.find(o => o.key === draggingDivineObjectKey);
@@ -1694,27 +2014,26 @@ function startGame() {
   if (loaded && GameState.activeHabitat) {
     // Resume existing save
     gamePhase = 'playing';
-    selectedHabitatForStart = null;
     initHabitat(GameState.activeHabitat);
     document.getElementById('habitat-select-screen').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
+    const overlay = document.getElementById('game-start-overlay');
+    if (overlay) {
+      overlay.classList.add('hidden');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
     renderMapTab();
     renderSkillsTab();
     renderDivineTab();
     renderLogTab();
-    requestAnimationFrame(ts => { lastTimestamp = ts; requestAnimationFrame(gameLoop); });
+    lastTimestamp = 0;
+    requestAnimationFrame(gameLoop);
   } else {
     // Fresh game — show habitat selection
     gamePhase = 'select';
-    selectedHabitatForStart = null;
     showSelectionScreen();
   }
 }
 
 // Boot
 startGame();
-
-
-
-
-
